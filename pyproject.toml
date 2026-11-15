@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dual-color-wave"
+version = "1.1.0"
+description = "灰度图 + 封闭 3D 模型 -> 双色波浪混色 STL（Bambu Studio 多零件对象），附 CLI 与本地网页 UI"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "yinbaozong" }]
+requires-python = ">=3.10"
+keywords = [
+    "3d-printing", "dual-color", "bambu-studio", "ams", "stl",
+    "grayscale-image", "multicolor", "fdm",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Graphics :: 3D Modeling",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Natural Language :: Chinese (Simplified)",
+]
+dependencies = [
+    "numpy>=1.24",
+    "trimesh>=4.0",
+    "shapely>=2.0",
+    "pillow>=9.0",
+    "scipy>=1.10",
+    "networkx>=3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yinbaozong/dual-color-wave"
+
+[project.scripts]
+dual-color-wave = "dual_color_wave:main"
+
+[tool.setuptools]
+py-modules = ["dual_color_wave", "wave_gui"]

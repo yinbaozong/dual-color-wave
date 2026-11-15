@@ -38,7 +38,7 @@ from shapely.geometry import Polygon, LineString
 from shapely.ops import polygonize, unary_union
 from PIL import Image, ImageDraw, ImageFont
 
-__version__ = "1.0"
+__version__ = "1.1.0"
 
 DEFAULT_PARAMS = {
     "model": None,                 # STL/OBJ/3MF；None = 自动生成测试圆柱
@@ -56,6 +56,7 @@ DEFAULT_PARAMS = {
     "mapping": "cylindrical",      # cylindrical | planar
     "planar_axis": "x",            # planar 模式下 u 由 x 还是 y 决定
     "angle_offset": 0.0,           # 柱面贴图旋转角，单位「度」
+    "gamma": 1.0,                  # 灰阶校正：I -> I**gamma；<1 提亮，>1 压暗
     "flip_u": False,
     "flip_v": False,
     "twist": 0.0,                  # 每个色段相位递进量（弧度），0=竖直编织，0.3 左右=斜纹
@@ -63,8 +64,6 @@ DEFAULT_PARAMS = {
     "overlap": 0.02,               # 相邻色段的 Z 向搭接量 (mm)
     "preview": True,
 }
-
-MM_PER_INCH = 1.0
 
 
 # ---------------------------------------------------------------- 基础工具
@@ -297,7 +296,16 @@ def generate(params: dict | None = None, log: Callable[[str], None] | None = Non
         f"{bounds[1][1]-bounds[0][1]:.1f} x {height:.1f} mm, "
         f"watertight={mesh.is_watertight}")
     if not mesh.is_watertight:
-        say("      注意：输入模型不是完全流形，切片轮廓可能不闭合；建议先做修复。")
+        say("      模型非完全流形，尝试自动补洞 / 修正绕向 ...")
+        try:
+            mesh.merge_vertices()
+            trimesh.repair.fill_holes(mesh)
+            trimesh.repair.fix_inversion(mesh)
+        except Exception as exc:
+            say(f"      自动修复未完成（{exc}），继续按原网格切片。")
+        say(f"      修复后 watertight={mesh.is_watertight}")
+        if not mesh.is_watertight:
+            say("      仍非流形：切片轮廓可能不闭合，建议先用 Blender / MeshLab 修复。")
 
     # ---- 2. 灰度图 ---------------------------------------------------------
     if p["image"]:
@@ -333,6 +341,11 @@ def generate(params: dict | None = None, log: Callable[[str], None] | None = Non
     white_parts, black_parts, records = [], [], []
     skipped = 0
     warned_polygon = False
+    invalid_inner = 0
+    gamma = p.get("gamma", 1.0)
+    gamma = 1.0 if gamma is None else float(gamma)
+    if gamma <= 0:
+        raise ValueError("gamma 必须大于 0（推荐 0.6~1.6）")
 
     for b in range(n_blocks):
         z0 = b * per_color * lh
@@ -384,11 +397,15 @@ def generate(params: dict | None = None, log: Callable[[str], None] | None = Non
                 bool(p["flip_u"]), bool(p["flip_v"]),
             )
             weight = np.clip(weight_of(I), 0.0, 1.0)
+            if gamma != 1.0:                       # 灰阶校正：暗部/亮部细节增强
+                weight = weight ** gamma if is_white else 1.0 - (1.0 - weight) ** gamma
             wave = 0.5 * (1.0 + np.sin(2.0 * math.pi * arc_s / lam + phase))
             disp = a_min + (a_max - a_min) * weight * wave
 
             outer = pts_xy + normals * disp[:, None]
             inner = pts_xy - normals * wall
+            if not Polygon(inner).is_valid:
+                invalid_inner += 1
             z_shift = -droop * weight * wave
 
             seg = build_segment_mesh(outer, inner, zb, zt, z_shift)
@@ -404,6 +421,9 @@ def generate(params: dict | None = None, log: Callable[[str], None] | None = Non
                            "请检查模型是否为封闭实体、层高是否过大。")
     if skipped:
         say(f"      跳过 {skipped} 个空截面")
+    if invalid_inner:
+        say(f"      警告：{invalid_inner} 个色段的内轮廓发生自相交（常见于凹多、"
+            "壁厚偏大的模型），建议减小 wall_thickness 后重新生成。")
 
     # ---- 4. 合并导出 -------------------------------------------------------
     say("[4/5] 合并网格并导出 binary STL ...")
@@ -603,6 +623,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--planar-axis", choices=["x", "y"], default="x",
                     help="平面模式下由哪个水平轴决定 u (默认 x)")
     ap.add_argument("--angle-offset", type=float, default=0.0, help="柱面贴图旋转角度 (度)")
+    ap.add_argument("--gamma", type=float, default=1.0,
+                    help="灰阶校正指数 (默认 1.0；0.6~0.9 提亮图案，1.1~1.6 加深)")
     ap.add_argument("--flip-u", action="store_true", help="水平镜像贴图")
     ap.add_argument("--flip-v", action="store_true", help="垂直镜像贴图")
     ap.add_argument("--twist", type=float, default=0.0,
@@ -642,6 +664,7 @@ def main(argv=None) -> int:
         "mapping": args.mapping,
         "planar_axis": args.planar_axis,
         "angle_offset": args.angle_offset,
+        "gamma": args.gamma,
         "flip_u": args.flip_u,
         "flip_v": args.flip_v,
         "twist": args.twist,

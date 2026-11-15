@@ -39,6 +39,7 @@ ALLOWED_FILES = {
     "preview_wave.png", "demo_gray.png", "demo_cylinder.stl",
     "wave_white.stl", "wave_black.stl", "run_info.json",
 }
+MAX_UPLOAD_MB = 100          # 本地回环上传上限，防止误传超大文件拖死服务
 
 
 PAGE = r"""<!doctype html>
@@ -151,7 +152,11 @@ PAGE = r"""<!doctype html>
         </div>
         <div class="row">
           <div><label>柱面旋转角（度）</label><input type="number" step="any" name="angle_offset" value="0"></div>
+          <div><label>灰阶校正 gamma</label><input type="number" step="any" name="gamma" value="1"></div>
+        </div>
+        <div class="row">
           <div><label>相位递进 twist（弧度）</label><input type="number" step="any" name="twist" value="0"></div>
+          <div></div>
         </div>
         <div class="checks">
           <label><input type="checkbox" name="flip_u"> 水平镜像</label>
@@ -350,7 +355,7 @@ def _coerce(fields):
     p = dict(DEFAULT_PARAMS)
     floats = ["demo_radius", "demo_height", "layer_height", "wavelength",
               "max_amplitude", "min_amplitude", "wall_thickness", "sample_step",
-              "angle_offset", "twist", "droop", "overlap"]
+              "angle_offset", "twist", "droop", "overlap", "gamma"]
     ints = ["layers_per_color"]
     strs = ["model", "image", "output", "mapping", "planar_axis"]
     for k in floats:
@@ -462,6 +467,13 @@ class Handler(BaseHTTPRequestHandler):
                 return
         try:
             fields, files = _parse_multipart(self)
+            oversized = [n for n, (fn, data) in files.items() if len(data) > MAX_UPLOAD_MB * 1048576]
+            if oversized:
+                self._send(400, json.dumps(
+                    {"ok": False,
+                     "error": f"上传文件超过 {MAX_UPLOAD_MB} MB 上限：{', '.join(oversized)}"},
+                    ensure_ascii=False))
+                return
             params = _coerce(fields)
             out_dir = os.path.abspath(params["output"] or "output_wave")
             os.makedirs(os.path.join(out_dir, "uploads"), exist_ok=True)
