@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# WorkBuddy project data (not source code)
+.workbuddy/
+
+# Generated models, previews and uploads
+output_*/
+uploads/
+*.stl
+*.3mf
+
+# Local UI screenshots / temp browser profile
+ui_screenshot.png
+ui_result.png
+.edge_tmp/
+
+# OS
+Thumbs.db
+.DS_Store
